@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анализатор ТРГ - Цефалометрический анализ</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 25% 50% 25%;
+            gap: 20px;
+            align-items: start;
+        }
+
+        /* Левая колонка - Список точек */
+        .points-list-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Центральная колонка - Изображение */
+        .image-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Правая колонка - Расчеты */
+        .calculations-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .section-title {
+            font-size: 1.4em;
+            color: #4a5568;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .available-points {
+            background: #f7fafc;
+            border-radius: 12px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .available-point-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            background: #ffffff;
+            border-radius: 8px;
+            border-left: 3px solid #cbd5e0;
+            font-size: 0.9em;
+        }
+
+        .available-point-item.current {
+            border-left-color: #667eea;
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .available-point-item.completed {
+            border-left-color: #38a169;
+            background: rgba(56, 161, 105, 0.05);
+            opacity: 0.7;
+        }
+
+        .upload-area {
+            border: 3px dashed #cbd5e0;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .upload-area.dragover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .upload-icon {
+            font-size: 3em;
+            color: #cbd5e0;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            color: #718096;
+            font-size: 1.1em;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .canvas-container {
+            position: relative;
+            border: 2px solid #e2e8f0;
+            border-radius: 15px;
+            overflow: hidden;
+            background: #f7fafc;
+            min-height: 400px;
+            max-height: 600px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #imageCanvas {
+            cursor: crosshair;
+            display: block;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 15px 0;
+            justify-content: center;
+        }
+
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            font-size: 1.2em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .zoom-level {
+            font-weight: bold;
+            color: #4a5568;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .calculations {
+            background: #f7fafc;
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .calculation-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .calculation-item:last-child {
+            border-bottom: none;
+        }
+
+        .angle-name {
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .angle-value {
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .controls-hint {
+            background: rgba(255, 235, 59, 0.1);
+            border: 1px solid rgba(255, 235, 59, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 0.9em;
+            color: #6b7280;
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .points-list-section {
+                order: 1;
+            }
+            
+            .image-section {
+                order: 2;
+            }
+            
+            .calculations-section {
+                order: 3;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-content">
+            <!-- Левая колонка - Список точек для расстановки (25%) -->
+            <div class="points-list-section">
+                <div class="section-title">
+                    📍 Точки для расстановки
+                </div>
+
+                <div class="available-points" id="availablePoints">
+                    <!-- Список доступных точек -->
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <button class="btn" id="clearPoints">🗑️ Очистить точки</button>
+                    <button class="btn" id="undoPoint">↶ Отменить последнюю</button>
+                </div>
+            </div>
+
+            <!-- Центральная колонка - Изображение ТРГ (50%) -->
+            <div class="image-section">
+                <div class="section-title">
+                    📸 Анализ ТРГ снимка
+                </div>
+                
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📤</div>
+                    <div class="upload-text">
+                        Перетащите ТРГ снимок сюда или нажмите для выбора файла<br>
+                        <small>Поддерживаются форматы: JPG, PNG, GIF</small>
+                    </div>
+                    <input type="file" id="fileInput" class="file-input" accept="image/*">
+                </div>
+
+                <div class="canvas-container">
+                    <canvas id="imageCanvas"></canvas>
+                </div>
+
+                <div class="zoom-controls">
+                    <button class="btn zoom-btn" id="zoomOut">-</button>
+                    <span class="zoom-level" id="zoomLevel">100%</span>
+                    <button class="btn zoom-btn" id="zoomIn">+</button>
+                    <button class="btn" id="resetZoom">🔍 Сбросить</button>
+                    <button class="btn" id="loadNewImage">📤 Новый снимок</button>
+                </div>
+
+                <div class="controls-hint">
+                    <strong>💡 Управление:</strong><br>
+                    • <strong>Левый клик</strong> - добавить точку<br>
+                    • <strong>Перетаскивание точки</strong> - переместить<br>
+                    • <strong>Колесико мыши</strong> или кнопки +/- - масштаб<br>
+                    • <strong>Правая кнопка мыши</strong> + перетаскивание - панорамирование<br>
+                </div>
+            </div>
+
+            <!-- Правая колонка - Расчеты углов (25%) -->
+            <div class="calculations-section">
+                <div class="section-title">
+                    📐 Расчеты углов
+                </div>
+
+                <div class="calculations" id="calculations">
+                    <div id="anglesList">
+                        <div style="text-align: center; color: #718096; padding: 20px;">
+                            Добавьте точки для расчета углов<br>
+                            <small style="font-size: 0.8em; margin-top: 10px; display: block;">
+                                📊 Базовые: SNA, SNB, ANB<br>
+                                📏 Тип роста: GoMe-SN, N-A-Pg<br>
+                                🦷 Наклоны резцов: U1/SN, L1/GoMe, U1/L1
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class TRGAnalyzer {
+            constructor() {
+                this.canvas = document.getElementById('imageCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.points = [];
+                this.image = null;
+                this.scale = 1;
+                this.zoom = 1;
+                this.panX = 0;
+                this.panY = 0;
+                this.isDragging = false;
+                this.dragStartX = 0;
+                this.dragStartY = 0;
+                this.draggedPointIndex = -1;
+                this.lastMouseX = 0;
+                this.lastMouseY = 0;
+                
+                this.predefinedPoints = [
+                    'S (Sella)', 
+                    'N (Nasion)', 
+                    'A (Point A)', 
+                    'B (Point B)',
+                    'Pg (Pogonion)', 
+                    'Go (Gonion)', 
+                    'Me (Menton)',
+                    'U1i (Режущий край верхнего резца)',
+                    'U1a (Верхушка корня верхнего резца)', 
+                    'L1i (Режущий край нижнего резца)',
+                    'L1a (Верхушка корня нижнего резца)'
+                ];
+                this.currentPointIndex = 0;
+                
+                this.initializeEventListeners();
+                this.updateAvailablePoints();
+            }
+
+            updateAvailablePoints() {
+                const availablePointsContainer = document.getElementById('availablePoints');
+                availablePointsContainer.innerHTML = '<h4 style="margin-bottom: 10px; color: #4a5568;">Доступные точки:</h4>';
+                
+                console.log('Обновляем список точек. Всего:', this.predefinedPoints.length, 'Текущая:', this.currentPointIndex);
+                
+                this.predefinedPoints.forEach((pointName, index) => {
+                    const pointItem = document.createElement('div');
+                    pointItem.className = 'available-point-item';
+                    
+                    if (index < this.currentPointIndex) {
+                        pointItem.classList.add('completed');
+                        pointItem.innerHTML = `
+                            <span>${pointName}</span>
+                            <span style="color: #38a169;">✓</span>
+                        `;
+                    } else if (index === this.currentPointIndex) {
+                        pointItem.classList.add('current');
+                        pointItem.innerHTML = `
+                            <span><strong>${pointName}</strong></span>
+                            <span style="color: #667eea;">→</span>
+                        `;
+                    } else {
+                        pointItem.innerHTML = `
+                            <span style="opacity: 0.6;">${pointName}</span>
+                            <span style="opacity: 0.6;">○</span>
+                        `;
+                    }
+                    
+                    availablePointsContainer.appendChild(pointItem);
+                });
+            }
+
+            initializeEventListeners() {
+                const uploadArea = document.getElementById('uploadArea');
+                const fileInput = document.getElementById('fileInput');
+
+                uploadArea.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    uploadArea.classList.add('dragover');
+                });
+
+                uploadArea.addEventListener('dragleave', () => {
+                    uploadArea.classList.remove('dragover');
+                });
+
+                uploadArea.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    uploadArea.classList.remove('dragover');
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        this.loadImage(files[0]);
+                    }
+                });
+
+                uploadArea.addEventListener('click', () => {
+                    fileInput.click();
+                });
+
+                fileInput.addEventListener('change', (e) => {
+                    if (e.target.files.length > 0) {
+                        this.loadImage(e.target.files[0]);
+                    }
+                });
+
+                this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+                this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+                this.canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+                this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
+                this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+                document.getElementById('zoomIn').addEventListener('click', () => this.zoomIn());
+                document.getElementById('zoomOut').addEventListener('click', () => this.zoomOut());
+                document.getElementById('resetZoom').addEventListener('click', () => this.resetZoom());
+                document.getElementById('clearPoints').addEventListener('click', () => this.clearAllPoints());
+                document.getElementById('undoPoint').addEventListener('click', () => this.undoLastPoint());
+                document.getElementById('loadNewImage').addEventListener('click', () => this.loadNewImage());
+            }
+
+            handleMouseDown(e) {
+                if (!this.image) return;
+
+                const rect = this.canvas.getBoundingClientRect();
+                this.lastMouseX = e.clientX - rect.left;
+                this.lastMouseY = e.clientY - rect.top;
+                this.dragStartX = this.lastMouseX;
+                this.dragStartY = this.lastMouseY;
+
+                const pointIndex = this.getPointAtPosition(e);
+                
+                if (pointIndex !== -1 && e.button === 0) {
+                    this.draggedPointIndex = pointIndex;
+                    this.canvas.style.cursor = 'grabbing';
+                } else if (e.button === 2) {
+                    this.isDragging = true;
+                    this.canvas.style.cursor = 'grabbing';
+                }
+            }
+
+            handleMouseMove(e) {
+                if (!this.image) return;
+
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                if (this.draggedPointIndex !== -1) {
+                    this.movePoint(e);
+                } else if (this.isDragging) {
+                    const deltaX = mouseX - this.lastMouseX;
+                    const deltaY = mouseY - this.lastMouseY;
+                    this.panX += deltaX;
+                    this.panY += deltaY;
+                    this.drawImage();
+                } else {
+                    const pointIndex = this.getPointAtPosition(e);
+                    if (pointIndex !== -1) {
+                        this.canvas.style.cursor = 'pointer';
+                    } else {
+                        this.canvas.style.cursor = 'crosshair';
+                    }
+                }
+
+                this.lastMouseX = mouseX;
+                this.lastMouseY = mouseY;
+            }
+
+            handleMouseUp(e) {
+                if (!this.image) return;
+
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                const deltaX = Math.abs(mouseX - this.dragStartX);
+                const deltaY = Math.abs(mouseY - this.dragStartY);
+
+                if (this.draggedPointIndex !== -1) {
+                    this.draggedPointIndex = -1;
+                    this.calculateAngles();
+                } else if (this.isDragging) {
+                    this.isDragging = false;
+                } else if (e.button === 0 && deltaX < 5 && deltaY < 5) {
+                    this.addPoint(e);
+                }
+
+                // Обновляем курсор в зависимости от состояния
+                const pointIndex = this.getPointAtPosition(e);
+                if (pointIndex !== -1) {
+                    this.canvas.style.cursor = 'pointer';
+                } else if (this.points.length >= 11) {
+                    this.canvas.style.cursor = 'not-allowed';
+                } else {
+                    this.canvas.style.cursor = 'crosshair';
+                }
+            }
+
+            handleWheel(e) {
+                if (!this.image) return;
+                
+                e.preventDefault();
+                
+                if (e.deltaY < 0) {
+                    this.zoomIn(e);
+                } else {
+                    this.zoomOut(e);
+                }
+            }
+
+            loadImage(file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        this.image = img;
+                        this.setupCanvas();
+                        this.drawImage();
+                        
+                        document.getElementById('uploadArea').style.display = 'none';
+                        
+                        this.currentPointIndex = 0;
+                        this.updateAvailablePoints();
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+
+            setupCanvas() {
+                const maxWidth = 700;
+                const maxHeight = 500;
+                
+                let { width, height } = this.image;
+                
+                if (width > maxWidth) {
+                    this.scale = maxWidth / width;
+                    width = maxWidth;
+                    height *= this.scale;
+                }
+                
+                if (height > maxHeight) {
+                    const heightScale = maxHeight / height;
+                    this.scale *= heightScale;
+                    width *= heightScale;
+                    height = maxHeight;
+                }
+                
+                this.canvas.width = width;
+                this.canvas.height = height;
+                
+                this.zoom = 1;
+                this.panX = 0;
+                this.panY = 0;
+                this.updateZoomDisplay();
+            }
+
+            drawImage() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                this.ctx.save();
+                this.ctx.translate(this.panX, this.panY);
+                this.ctx.scale(this.zoom, this.zoom);
+                
+                this.ctx.drawImage(this.image, 0, 0, this.canvas.width, this.canvas.height);
+                
+                this.ctx.restore();
+                
+                this.drawPoints();
+            }
+
+            drawPoints() {
+                this.points.forEach((point, index) => {
+                    const screenX = point.x * this.zoom + this.panX;
+                    const screenY = point.y * this.zoom + this.panY;
+                    
+                    this.ctx.fillStyle = '#667eea';
+                    this.ctx.beginPath();
+                    this.ctx.arc(screenX, screenY, 6, 0, 2 * Math.PI);
+                    this.ctx.fill();
+                    
+                    this.ctx.strokeStyle = '#ffffff';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.stroke();
+                    
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 12px Arial';
+                    this.ctx.fillText(point.name.split(' ')[0], screenX + 10, screenY - 10);
+                    this.ctx.strokeStyle = '#333333';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.strokeText(point.name.split(' ')[0], screenX + 10, screenY - 10);
+                });
+            }
+
+            addPoint(event) {
+                if (this.points.length >= 11) {
+                    return;
+                }
+
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseX = event.clientX - rect.left;
+                const mouseY = event.clientY - rect.top;
+                
+                const x = (mouseX - this.panX) / this.zoom;
+                const y = (mouseY - this.panY) / this.zoom;
+                
+                const pointName = this.predefinedPoints[this.currentPointIndex];
+                
+                const point = {
+                    name: pointName,
+                    x: x,
+                    y: y,
+                    id: this.points.length
+                };
+                
+                this.points.push(point);
+                this.currentPointIndex++;
+                
+                this.drawImage();
+                this.updateAvailablePoints();
+                this.calculateAngles();
+            }
+
+            movePoint(event) {
+                if (this.draggedPointIndex === -1) return;
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseX = event.clientX - rect.left;
+                const mouseY = event.clientY - rect.top;
+                
+                const x = (mouseX - this.panX) / this.zoom;
+                const y = (mouseY - this.panY) / this.zoom;
+                
+                this.points[this.draggedPointIndex].x = x;
+                this.points[this.draggedPointIndex].y = y;
+                
+                this.drawImage();
+            }
+
+            getPointAtPosition(event) {
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseX = event.clientX - rect.left;
+                const mouseY = event.clientY - rect.top;
+                
+                for (let i = 0; i < this.points.length; i++) {
+                    const point = this.points[i];
+                    const screenX = point.x * this.zoom + this.panX;
+                    const screenY = point.y * this.zoom + this.panY;
+                    
+                    const distance = Math.sqrt(
+                        Math.pow(mouseX - screenX, 2) + Math.pow(mouseY - screenY, 2)
+                    );
+                    
+                    if (distance <= 12) {
+                        return i;
+                    }
+                }
+                return -1;
+            }
+
+            zoomIn(event) {
+                const newZoom = Math.min(this.zoom * 1.2, 5);
+                this.applyZoom(newZoom, event);
+            }
+
+            zoomOut(event) {
+                const newZoom = Math.max(this.zoom / 1.2, 0.2);
+                this.applyZoom(newZoom, event);
+            }
+
+            applyZoom(newZoom, event) {
+                if (!this.image) return;
+
+                let centerX = this.canvas.width / 2;
+                let centerY = this.canvas.height / 2;
+
+                if (event) {
+                    const rect = this.canvas.getBoundingClientRect();
+                    centerX = event.clientX - rect.left;
+                    centerY = event.clientY - rect.top;
+                }
+
+                const scale = newZoom / this.zoom;
+                this.panX = centerX - (centerX - this.panX) * scale;
+                this.panY = centerY - (centerY - this.panY) * scale;
+                this.zoom = newZoom;
+
+                this.drawImage();
+                this.updateZoomDisplay();
+            }
+
+            updateZoomDisplay() {
+                document.getElementById('zoomLevel').textContent = Math.round(this.zoom * 100) + '%';
+            }
+
+            resetZoom() {
+                this.zoom = 1;
+                this.panX = 0;
+                this.panY = 0;
+                this.drawImage();
+                this.updateZoomDisplay();
+            }
+
+            calculateAngles() {
+                console.log('calculateAngles() вызвана, количество точек:', this.points.length);
+                
+                const anglesList = document.getElementById('anglesList');
+                anglesList.innerHTML = '';
+                
+                if (this.points.length < 3) {
+                    anglesList.innerHTML = '<div style="text-align: center; color: #718096; padding: 20px;">Добавьте минимум 3 точки для расчета углов</div>';
+                    return;
+                }
+                
+                const angles = this.getStandardAngles();
+                
+                if (angles.length === 0) {
+                    anglesList.innerHTML = '<div style="text-align: center; color: #718096; padding: 20px;">Недостаточно стандартных точек для расчета углов</div>';
+                    return;
+                }
+                
+                console.log('Отображаем углы:', angles);
+                
+                angles.forEach(angle => {
+                    const angleItem = document.createElement('div');
+                    angleItem.className = 'calculation-item';
+                    angleItem.innerHTML = `
+                        <div class="angle-name">${angle.name}</div>
+                        <div class="angle-value">${angle.value}°</div>
+                    `;
+                    anglesList.appendChild(angleItem);
+                });
+            }
+
+            getStandardAngles() {
+                const angles = [];
+                const pointMap = {};
+                
+                this.points.forEach(point => {
+                    const shortName = point.name.split(' ')[0];
+                    pointMap[shortName] = point;
+                });
+                
+                if (pointMap.S && pointMap.N && pointMap.A) {
+                    const angle = this.calculateAngle(pointMap.S, pointMap.N, pointMap.A);
+                    angles.push({ name: 'SNA (°)', value: angle.toFixed(1) });
+                }
+                
+                if (pointMap.S && pointMap.N && pointMap.B) {
+                    const angle = this.calculateAngle(pointMap.S, pointMap.N, pointMap.B);
+                    angles.push({ name: 'SNB (°)', value: angle.toFixed(1) });
+                }
+                
+                if (pointMap.A && pointMap.N && pointMap.B) {
+                    const angle = this.calculateAngle(pointMap.A, pointMap.N, pointMap.B);
+                    angles.push({ name: 'ANB (°)', value: angle.toFixed(1) });
+                }
+                
+                if (pointMap.Go && pointMap.Me && pointMap.S && pointMap.N) {
+                    const goMeAngle = Math.atan2(pointMap.Me.y - pointMap.Go.y, pointMap.Me.x - pointMap.Go.x) * (180 / Math.PI);
+                    const snAngle = Math.atan2(pointMap.N.y - pointMap.S.y, pointMap.N.x - pointMap.S.x) * (180 / Math.PI);
+                    let mandibularAngle = Math.abs(goMeAngle - snAngle);
+                    if (mandibularAngle > 180) mandibularAngle = 360 - mandibularAngle;
+                    angles.push({ name: 'GoMe-SN (°)', value: mandibularAngle.toFixed(1) });
+                }
+                
+                if (pointMap.N && pointMap.A && pointMap.Pg) {
+                    const angle = this.calculateAngle(pointMap.N, pointMap.A, pointMap.Pg);
+                    angles.push({ name: 'N-A-Pg (°)', value: angle.toFixed(1) });
+                }
+                
+                // Наклоны резцов
+                if (pointMap.U1i && pointMap.U1a && pointMap.S && pointMap.N) {
+                    const u1Angle = Math.atan2(pointMap.U1a.y - pointMap.U1i.y, pointMap.U1a.x - pointMap.U1i.x) * (180 / Math.PI);
+                    const snAngle = Math.atan2(pointMap.N.y - pointMap.S.y, pointMap.N.x - pointMap.S.x) * (180 / Math.PI);
+                    let upperIncisorAngle = Math.abs(u1Angle - snAngle);
+                    if (upperIncisorAngle > 180) upperIncisorAngle = 360 - upperIncisorAngle;
+                    angles.push({ name: 'U1/SN (°)', value: upperIncisorAngle.toFixed(1) });
+                }
+                
+                if (pointMap.L1i && pointMap.L1a && pointMap.Go && pointMap.Me) {
+                    const l1Angle = Math.atan2(pointMap.L1a.y - pointMap.L1i.y, pointMap.L1a.x - pointMap.L1i.x) * (180 / Math.PI);
+                    const goMeAngle = Math.atan2(pointMap.Me.y - pointMap.Go.y, pointMap.Me.x - pointMap.Go.x) * (180 / Math.PI);
+                    let lowerIncisorAngle = Math.abs(l1Angle - goMeAngle);
+                    if (lowerIncisorAngle > 180) lowerIncisorAngle = 360 - lowerIncisorAngle;
+                    angles.push({ name: 'L1/GoMe (°)', value: lowerIncisorAngle.toFixed(1) });
+                }
+                
+                if (pointMap.U1i && pointMap.U1a && pointMap.L1i && pointMap.L1a) {
+                    const u1Angle = Math.atan2(pointMap.U1a.y - pointMap.U1i.y, pointMap.U1a.x - pointMap.U1i.x);
+                    const l1Angle = Math.atan2(pointMap.L1a.y - pointMap.L1i.y, pointMap.L1a.x - pointMap.L1i.x);
+                    let interincisal = Math.abs(u1Angle - l1Angle) * (180 / Math.PI);
+                    if (interincisal > 180) interincisal = 360 - interincisal;
+                    angles.push({ name: 'U1/L1 (°)', value: interincisal.toFixed(1) });
+                }
+                
+                return angles;
+            }
+
+            calculateAngle(p1, vertex, p2) {
+                const angle1 = Math.atan2(p1.y - vertex.y, p1.x - vertex.x);
+                const angle2 = Math.atan2(p2.y - vertex.y, p2.x - vertex.x);
+                let angle = Math.abs(angle1 - angle2) * (180 / Math.PI);
+                
+                if (angle > 180) {
+                    angle = 360 - angle;
+                }
+                
+                return angle;
+            }
+
+            clearAllPoints() {
+                this.points = [];
+                this.currentPointIndex = 0;
+                this.drawImage();
+                this.updateAvailablePoints();
+                this.calculateAngles();
+            }
+
+            undoLastPoint() {
+                if (this.points.length > 0) {
+                    this.points.pop();
+                    this.currentPointIndex = Math.max(0, this.currentPointIndex - 1);
+                    this.drawImage();
+                    this.updateAvailablePoints();
+                    this.calculateAngles();
+                }
+            }
+
+            loadNewImage() {
+                document.getElementById('uploadArea').style.display = 'block';
+                this.image = null;
+                this.points = [];
+                this.currentPointIndex = 0;
+                this.zoom = 1;
+                this.panX = 0;
+                this.panY = 0;
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.updateAvailablePoints();
+                this.calculateAngles();
+                this.updateZoomDisplay();
+                document.getElementById('fileInput').value = '';
+            }
+        }
+
+        // Инициализация приложения
+        document.addEventListener('DOMContentLoaded', () => {
+            new TRGAnalyzer();
+        });
+    </script>
+</body>
+</html>
