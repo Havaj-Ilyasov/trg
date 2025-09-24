@@ -274,6 +274,12 @@
                 <div style="margin-top: 20px;">
                     <button class="btn" id="clearPoints">🗑️ Очистить точки</button>
                     <button class="btn" id="undoPoint">↶ Отменить последнюю</button>
+                    <button class="btn" id="calibrateScale">📏 Калибровка масштаба</button>
+                </div>
+
+                <div id="calibrationInfo" style="display: none; margin-top: 15px; padding: 15px; background: #e8f5e9; border-radius: 10px; border-left: 4px solid #4caf50;">
+                    <strong>🎯 Калибровка активна</strong><br>
+                    <small>Масштаб: <span id="scaleValue">не установлен</span> мм/px</small>
                 </div>
             </div>
 
@@ -309,14 +315,18 @@
                     • <strong>Левый клик</strong> - добавить точку<br>
                     • <strong>Перетаскивание точки</strong> - переместить<br>
                     • <strong>Колесико мыши</strong> или кнопки +/- - масштаб<br>
-                    • <strong>Правая кнопка мыши</strong> + перетаскивание - панорамирование<br>
+                    • <strong>Правая кнопка мыши</strong> + перетаскивание - панорамирование<br><br>
+                    <strong>📏 Калибровка по линейке (10 мм):</strong><br>
+                    • Найдите линейку на снимке (обычно в углу)<br>
+                    • Отметьте ТОЧНО 10 мм на линейке (от 0 до 10)<br>
+                    • Первый клик - начало, второй клик - конец отрезка
                 </div>
             </div>
 
             <!-- Правая колонка - Расчеты углов (25%) -->
             <div class="calculations-section">
                 <div class="section-title">
-                    📐 Расчеты углов
+                    📊 Расчеты углов
                 </div>
 
                 <div class="calculations" id="calculations">
@@ -325,8 +335,9 @@
                             Добавьте точки для расчета углов<br>
                             <small style="font-size: 0.8em; margin-top: 10px; display: block;">
                                 📊 Базовые: SNA, SNB, ANB<br>
-                                📏 Тип роста: GoMe-SN, N-A-Pg<br>
-                                🦷 Наклоны резцов: U1/SN, L1/GoMe, U1/L1
+                                📐 Тип роста: SN-MP<br>
+                                🦷 Наклоны резцов: U1/SN, L1/GoMe, U1/L1<br>
+                                📏 Длины: S-N, ANS-PNS, Go-Me
                             </small>
                         </div>
                     </div>
@@ -353,6 +364,12 @@
                 this.lastMouseX = 0;
                 this.lastMouseY = 0;
                 
+                // Калибровка масштаба
+                this.isCalibrating = false;
+                this.calibrationPoints = [];
+                this.pixelsPerMM = null;
+                this.calibrationLength = 10; // По умолчанию 10 мм (стандартная линейка)
+                
                 this.predefinedPoints = [
                     'S (Sella)', 
                     'N (Nasion)', 
@@ -361,8 +378,10 @@
                     'Pg (Pogonion)', 
                     'Go (Gonion)', 
                     'Me (Menton)',
+                    'ANS (Anterior Nasal Spine)', // Передняя носовая ость
+                    'PNS (Posterior Nasal Spine)', // Для длины верхней челюсти
                     'U1i (Режущий край верхнего резца)',
-                    'U1a (Верхушка корня верхнего резца)', 
+                    'U1a (Верхушка корня верхнего резца)',
                     'L1i (Режущий край нижнего резца)',
                     'L1a (Верхушка корня нижнего резца)'
                 ];
@@ -375,8 +394,6 @@
             updateAvailablePoints() {
                 const availablePointsContainer = document.getElementById('availablePoints');
                 availablePointsContainer.innerHTML = '<h4 style="margin-bottom: 10px; color: #4a5568;">Доступные точки:</h4>';
-                
-                console.log('Обновляем список точек. Всего:', this.predefinedPoints.length, 'Текущая:', this.currentPointIndex);
                 
                 this.predefinedPoints.forEach((pointName, index) => {
                     const pointItem = document.createElement('div');
@@ -397,7 +414,7 @@
                     } else {
                         pointItem.innerHTML = `
                             <span style="opacity: 0.6;">${pointName}</span>
-                            <span style="opacity: 0.6;">○</span>
+                            <span style="opacity: 0.6;">◯</span>
                         `;
                     }
                     
@@ -449,6 +466,7 @@
                 document.getElementById('clearPoints').addEventListener('click', () => this.clearAllPoints());
                 document.getElementById('undoPoint').addEventListener('click', () => this.undoLastPoint());
                 document.getElementById('loadNewImage').addEventListener('click', () => this.loadNewImage());
+                document.getElementById('calibrateScale').addEventListener('click', () => this.startCalibration());
             }
 
             handleMouseDown(e) {
@@ -490,6 +508,10 @@
                     const pointIndex = this.getPointAtPosition(e);
                     if (pointIndex !== -1) {
                         this.canvas.style.cursor = 'pointer';
+                    } else if (this.isCalibrating) {
+                        this.canvas.style.cursor = 'crosshair';
+                    } else if (this.points.length >= 13) {
+                        this.canvas.style.cursor = 'not-allowed';
                     } else {
                         this.canvas.style.cursor = 'crosshair';
                     }
@@ -510,18 +532,33 @@
 
                 if (this.draggedPointIndex !== -1) {
                     this.draggedPointIndex = -1;
-                    this.calculateAngles();
+                    if (!this.isCalibrating) {
+                        this.calculateAngles();
+                    }
                 } else if (this.isDragging) {
                     this.isDragging = false;
                 } else if (e.button === 0 && deltaX < 5 && deltaY < 5) {
-                    this.addPoint(e);
+                    if (this.isCalibrating) {
+                        this.addCalibrationPoint(e);
+                    } else {
+                        this.addPoint(e);
+                    }
                 }
 
                 // Обновляем курсор в зависимости от состояния
+                this.updateCursor(e);
+            }
+
+            updateCursor(e) {
+                if (this.isCalibrating) {
+                    this.canvas.style.cursor = 'crosshair';
+                    return;
+                }
+                
                 const pointIndex = this.getPointAtPosition(e);
                 if (pointIndex !== -1) {
                     this.canvas.style.cursor = 'pointer';
-                } else if (this.points.length >= 11) {
+                } else if (this.points.length >= 13) {
                     this.canvas.style.cursor = 'not-allowed';
                 } else {
                     this.canvas.style.cursor = 'crosshair';
@@ -588,6 +625,8 @@
             }
 
             drawImage() {
+                if (!this.image) return;
+                
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 
                 this.ctx.save();
@@ -602,6 +641,15 @@
             }
 
             drawPoints() {
+                // Временно отключены линии между точками
+                // this.drawLines();
+                
+                // Рисуем калибровочные точки если активна калибровка
+                if (this.isCalibrating) {
+                    this.drawCalibrationPoints();
+                }
+                
+                // Рисуем только точки
                 this.points.forEach((point, index) => {
                     const screenX = point.x * this.zoom + this.panX;
                     const screenY = point.y * this.zoom + this.panY;
@@ -624,8 +672,127 @@
                 });
             }
 
+            drawCalibrationPoints() {
+                this.calibrationPoints.forEach((point, index) => {
+                    const screenX = point.x * this.zoom + this.panX;
+                    const screenY = point.y * this.zoom + this.panY;
+                    
+                    this.ctx.fillStyle = '#ff9800';
+                    this.ctx.beginPath();
+                    this.ctx.arc(screenX, screenY, 8, 0, 2 * Math.PI);
+                    this.ctx.fill();
+                    
+                    this.ctx.strokeStyle = '#ffffff';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.stroke();
+                    
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 14px Arial';
+                    this.ctx.fillText(`${index + 1}`, screenX + 12, screenY - 12);
+                    this.ctx.strokeStyle = '#333333';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.strokeText(`${index + 1}`, screenX + 12, screenY - 12);
+                });
+                
+                // Рисуем линию между калибровочными точками
+                if (this.calibrationPoints.length === 2) {
+                    const p1 = this.calibrationPoints[0];
+                    const p2 = this.calibrationPoints[1];
+                    
+                    this.ctx.strokeStyle = '#ff9800';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.setLineDash([5, 5]);
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(p1.x * this.zoom + this.panX, p1.y * this.zoom + this.panY);
+                    this.ctx.lineTo(p2.x * this.zoom + this.panX, p2.y * this.zoom + this.panY);
+                    this.ctx.stroke();
+                    
+                    this.ctx.setLineDash([]);
+                }
+            }
+
+            drawLines() {
+                const pointMap = {};
+                
+                this.points.forEach(point => {
+                    const shortName = point.name.split(' ')[0];
+                    pointMap[shortName] = point;
+                });
+
+                // Настройка стиля линий
+                this.ctx.strokeStyle = '#667eea';
+                this.ctx.lineWidth = 2;
+                this.ctx.setLineDash([]);
+
+                // Основные плоскости и линии
+                
+                // Плоскость основания черепа (S-N)
+                if (pointMap.S && pointMap.N) {
+                    this.drawLine(pointMap.S, pointMap.N, '#ff6b6b', 2);
+                }
+
+                // Плоскость верхней челюсти (A-PNS)
+                if (pointMap.A && pointMap.PNS) {
+                    this.drawLine(pointMap.A, pointMap.PNS, '#4ecdc4', 2);
+                }
+
+                // Мандибулярная плоскость (Go-Me)
+                if (pointMap.Go && pointMap.Me) {
+                    this.drawLine(pointMap.Go, pointMap.Me, '#45b7d1', 2);
+                }
+
+                // Лицевая плоскость (N-Pg)
+                if (pointMap.N && pointMap.Pg) {
+                    this.drawLine(pointMap.N, pointMap.Pg, '#96ceb4', 2);
+                }
+
+                // Линии для углов ANB
+                if (pointMap.A && pointMap.N) {
+                    this.drawLine(pointMap.A, pointMap.N, '#ffeaa7', 1, [5, 5]);
+                }
+                if (pointMap.B && pointMap.N) {
+                    this.drawLine(pointMap.B, pointMap.N, '#ffeaa7', 1, [5, 5]);
+                }
+
+                // Оси резцов
+                if (pointMap.U1i && pointMap.U1a) {
+                    this.drawLine(pointMap.U1i, pointMap.U1a, '#fd79a8', 2);
+                }
+                if (pointMap.L1i && pointMap.L1a) {
+                    this.drawLine(pointMap.L1i, pointMap.L1a, '#fd79a8', 2);
+                }
+
+                // Дополнительные конструктивные линии
+                if (pointMap.S && pointMap.A) {
+                    this.drawLine(pointMap.S, pointMap.A, '#ddd', 1, [3, 3]);
+                }
+                if (pointMap.S && pointMap.B) {
+                    this.drawLine(pointMap.S, pointMap.B, '#ddd', 1, [3, 3]);
+                }
+            }
+
+            drawLine(p1, p2, color = '#667eea', width = 2, dashArray = []) {
+                const screenX1 = p1.x * this.zoom + this.panX;
+                const screenY1 = p1.y * this.zoom + this.panY;
+                const screenX2 = p2.x * this.zoom + this.panX;
+                const screenY2 = p2.y * this.zoom + this.panY;
+
+                this.ctx.strokeStyle = color;
+                this.ctx.lineWidth = width;
+                this.ctx.setLineDash(dashArray);
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(screenX1, screenY1);
+                this.ctx.lineTo(screenX2, screenY2);
+                this.ctx.stroke();
+                
+                // Сбрасываем настройки линии
+                this.ctx.setLineDash([]);
+            }
+
             addPoint(event) {
-                if (this.points.length >= 11) {
+                if (this.points.length >= 13 || this.isCalibrating) {
                     return;
                 }
 
@@ -654,7 +821,7 @@
             }
 
             movePoint(event) {
-                if (this.draggedPointIndex === -1) return;
+                if (this.draggedPointIndex === -1 || !this.image) return;
                 
                 const rect = this.canvas.getBoundingClientRect();
                 const mouseX = event.clientX - rect.left;
@@ -691,7 +858,7 @@
             }
 
             zoomIn(event) {
-                const newZoom = Math.min(this.zoom * 1.2, 5);
+                const newZoom = Math.min(this.zoom * 1.2, 10);
                 this.applyZoom(newZoom, event);
             }
 
@@ -734,8 +901,6 @@
             }
 
             calculateAngles() {
-                console.log('calculateAngles() вызвана, количество точек:', this.points.length);
-                
                 const anglesList = document.getElementById('anglesList');
                 anglesList.innerHTML = '';
                 
@@ -744,28 +909,31 @@
                     return;
                 }
                 
-                const angles = this.getStandardAngles();
-                
-                if (angles.length === 0) {
-                    anglesList.innerHTML = '<div style="text-align: center; color: #718096; padding: 20px;">Недостаточно стандартных точек для расчета углов</div>';
-                    return;
+                try {
+                    const measurements = this.getStandardMeasurements();
+                    
+                    if (measurements.length === 0) {
+                        anglesList.innerHTML = '<div style="text-align: center; color: #718096; padding: 20px;">Недостаточно стандартных точек для расчета измерений</div>';
+                        return;
+                    }
+                    
+                    measurements.forEach(measurement => {
+                        const measurementItem = document.createElement('div');
+                        measurementItem.className = 'calculation-item';
+                        measurementItem.innerHTML = `
+                            <div class="angle-name">${measurement.name}</div>
+                            <div class="angle-value">${measurement.value}${measurement.unit}</div>
+                        `;
+                        anglesList.appendChild(measurementItem);
+                    });
+                } catch (error) {
+                    console.error('Ошибка в calculateAngles:', error);
+                    anglesList.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 20px;">Ошибка расчета измерений</div>';
                 }
-                
-                console.log('Отображаем углы:', angles);
-                
-                angles.forEach(angle => {
-                    const angleItem = document.createElement('div');
-                    angleItem.className = 'calculation-item';
-                    angleItem.innerHTML = `
-                        <div class="angle-name">${angle.name}</div>
-                        <div class="angle-value">${angle.value}°</div>
-                    `;
-                    anglesList.appendChild(angleItem);
-                });
             }
 
-            getStandardAngles() {
-                const angles = [];
+            getStandardMeasurements() {
+                const measurements = [];
                 const pointMap = {};
                 
                 this.points.forEach(point => {
@@ -773,32 +941,31 @@
                     pointMap[shortName] = point;
                 });
                 
+                // Базовые углы
                 if (pointMap.S && pointMap.N && pointMap.A) {
                     const angle = this.calculateAngle(pointMap.S, pointMap.N, pointMap.A);
-                    angles.push({ name: 'SNA (°)', value: angle.toFixed(1) });
+                    measurements.push({ name: 'SNA', value: angle.toFixed(1), unit: '°' });
                 }
                 
                 if (pointMap.S && pointMap.N && pointMap.B) {
                     const angle = this.calculateAngle(pointMap.S, pointMap.N, pointMap.B);
-                    angles.push({ name: 'SNB (°)', value: angle.toFixed(1) });
+                    measurements.push({ name: 'SNB', value: angle.toFixed(1), unit: '°' });
                 }
                 
                 if (pointMap.A && pointMap.N && pointMap.B) {
                     const angle = this.calculateAngle(pointMap.A, pointMap.N, pointMap.B);
-                    angles.push({ name: 'ANB (°)', value: angle.toFixed(1) });
+                    measurements.push({ name: 'ANB', value: angle.toFixed(1), unit: '°' });
                 }
                 
-                if (pointMap.Go && pointMap.Me && pointMap.S && pointMap.N) {
-                    const goMeAngle = Math.atan2(pointMap.Me.y - pointMap.Go.y, pointMap.Me.x - pointMap.Go.x) * (180 / Math.PI);
+                // Тип роста
+                
+                // ДОБАВЛЕН УГОЛ SN-MP (через Go-Me как мандибулярную плоскость)
+                if (pointMap.S && pointMap.N && pointMap.Go && pointMap.Me) {
                     const snAngle = Math.atan2(pointMap.N.y - pointMap.S.y, pointMap.N.x - pointMap.S.x) * (180 / Math.PI);
-                    let mandibularAngle = Math.abs(goMeAngle - snAngle);
-                    if (mandibularAngle > 180) mandibularAngle = 360 - mandibularAngle;
-                    angles.push({ name: 'GoMe-SN (°)', value: mandibularAngle.toFixed(1) });
-                }
-                
-                if (pointMap.N && pointMap.A && pointMap.Pg) {
-                    const angle = this.calculateAngle(pointMap.N, pointMap.A, pointMap.Pg);
-                    angles.push({ name: 'N-A-Pg (°)', value: angle.toFixed(1) });
+                    const goMeAngle = Math.atan2(pointMap.Me.y - pointMap.Go.y, pointMap.Me.x - pointMap.Go.x) * (180 / Math.PI);
+                    let snMpAngle = Math.abs(snAngle - goMeAngle);
+                    if (snMpAngle > 180) snMpAngle = 360 - snMpAngle;
+                    measurements.push({ name: 'SN-MP', value: snMpAngle.toFixed(1), unit: '°' });
                 }
                 
                 // Наклоны резцов
@@ -807,7 +974,7 @@
                     const snAngle = Math.atan2(pointMap.N.y - pointMap.S.y, pointMap.N.x - pointMap.S.x) * (180 / Math.PI);
                     let upperIncisorAngle = Math.abs(u1Angle - snAngle);
                     if (upperIncisorAngle > 180) upperIncisorAngle = 360 - upperIncisorAngle;
-                    angles.push({ name: 'U1/SN (°)', value: upperIncisorAngle.toFixed(1) });
+                    measurements.push({ name: 'U1/SN', value: upperIncisorAngle.toFixed(1), unit: '°' });
                 }
                 
                 if (pointMap.L1i && pointMap.L1a && pointMap.Go && pointMap.Me) {
@@ -815,7 +982,7 @@
                     const goMeAngle = Math.atan2(pointMap.Me.y - pointMap.Go.y, pointMap.Me.x - pointMap.Go.x) * (180 / Math.PI);
                     let lowerIncisorAngle = Math.abs(l1Angle - goMeAngle);
                     if (lowerIncisorAngle > 180) lowerIncisorAngle = 360 - lowerIncisorAngle;
-                    angles.push({ name: 'L1/GoMe (°)', value: lowerIncisorAngle.toFixed(1) });
+                    measurements.push({ name: 'L1/GoMe', value: lowerIncisorAngle.toFixed(1), unit: '°' });
                 }
                 
                 if (pointMap.U1i && pointMap.U1a && pointMap.L1i && pointMap.L1a) {
@@ -823,10 +990,95 @@
                     const l1Angle = Math.atan2(pointMap.L1a.y - pointMap.L1i.y, pointMap.L1a.x - pointMap.L1i.x);
                     let interincisal = Math.abs(u1Angle - l1Angle) * (180 / Math.PI);
                     if (interincisal > 180) interincisal = 360 - interincisal;
-                    angles.push({ name: 'U1/L1 (°)', value: interincisal.toFixed(1) });
+                    measurements.push({ name: 'U1/L1', value: interincisal.toFixed(1), unit: '°' });
+                }
+
+                // ДОБАВЛЕНЫ ИЗМЕРЕНИЯ ДЛИН
+                
+                // Длина основания черепа (S-N)
+                if (pointMap.S && pointMap.N) {
+                    const distance = this.calculateDistance(pointMap.S, pointMap.N);
+                    const unit = this.pixelsPerMM ? ' мм' : ' px';
+                    const value = this.pixelsPerMM ? (distance / this.pixelsPerMM).toFixed(1) : distance.toFixed(1);
+                    measurements.push({ name: 'S-N (длина основания черепа)', value: value, unit: unit });
                 }
                 
-                return angles;
+                // Длина верхней челюсти по небной плоскости (ANS-PNS)
+                if (pointMap.ANS && pointMap.PNS) {
+                    const distance = this.calculateDistance(pointMap.ANS, pointMap.PNS);
+                    const unit = this.pixelsPerMM ? ' мм' : ' px';
+                    const value = this.pixelsPerMM ? (distance / this.pixelsPerMM).toFixed(1) : distance.toFixed(1);
+                    measurements.push({ name: 'ANS-PNS (длина верхней челюсти)', value: value, unit: unit });
+                }
+                
+                // Длина нижней челюсти (Go-Me)
+                if (pointMap.Go && pointMap.Me) {
+                    const distance = this.calculateDistance(pointMap.Go, pointMap.Me);
+                    const unit = this.pixelsPerMM ? ' мм' : ' px';
+                    const value = this.pixelsPerMM ? (distance / this.pixelsPerMM).toFixed(1) : distance.toFixed(1);
+                    measurements.push({ name: 'Go-Me (длина нижней челюсти)', value: value, unit: unit });
+                }
+                
+                return measurements;
+            }
+
+            // Функция для расчета расстояния между двумя точками
+            calculateDistance(p1, p2) {
+                return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+            }
+
+            // Функции для калибровки масштаба
+            startCalibration() {
+                if (!this.image) {
+                    return;
+                }
+                
+                this.isCalibrating = true;
+                this.calibrationPoints = [];
+                this.calibrationLength = 10; // Фиксированная длина 10 мм
+                
+                this.drawImage();
+            }
+
+            addCalibrationPoint(event) {
+                if (this.calibrationPoints.length >= 2 || !this.image) return;
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseX = event.clientX - rect.left;
+                const mouseY = event.clientY - rect.top;
+                
+                const x = (mouseX - this.panX) / this.zoom;
+                const y = (mouseY - this.panY) / this.zoom;
+                
+                this.calibrationPoints.push({ x: x, y: y });
+                
+                // Перерисовываем сразу после добавления точки, чтобы она была видна
+                this.drawImage();
+                
+                if (this.calibrationPoints.length === 2) {
+                    // Небольшая задержка, чтобы пользователь увидел вторую точку
+                    setTimeout(() => {
+                        this.finishCalibration();
+                    }, 500);
+                }
+            }
+
+            finishCalibration() {
+                const p1 = this.calibrationPoints[0];
+                const p2 = this.calibrationPoints[1];
+                const pixelDistance = this.calculateDistance(p1, p2);
+                
+                this.pixelsPerMM = pixelDistance / this.calibrationLength;
+                
+                // Показываем информацию о калибровке
+                document.getElementById('calibrationInfo').style.display = 'block';
+                document.getElementById('scaleValue').textContent = (1/this.pixelsPerMM).toFixed(3);
+                
+                // Завершаем режим калибровки и очищаем калибровочные точки
+                this.isCalibrating = false;
+                this.calibrationPoints = [];
+                this.drawImage();
+                this.calculateAngles();
             }
 
             calculateAngle(p1, vertex, p2) {
@@ -867,6 +1119,13 @@
                 this.zoom = 1;
                 this.panX = 0;
                 this.panY = 0;
+                
+                // Сбрасываем калибровку
+                this.isCalibrating = false;
+                this.calibrationPoints = [];
+                this.pixelsPerMM = null;
+                document.getElementById('calibrationInfo').style.display = 'none';
+                
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 this.updateAvailablePoints();
                 this.calculateAngles();
